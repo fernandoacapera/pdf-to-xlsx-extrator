@@ -14,22 +14,27 @@ def trans_df(excel):
         df = df.drop("Unnamed: 6", axis=1)
     except:
         pass
+# Definir as condições
+    condicoes = [
+    df['Histórico'].str.startswith('Pix'),
+    df['Histórico'].str.startswith('TED')
+    ]
 
-    df = df[df['Histórico'].str.contains("Pix - Recebido|Transferência recebida", na=False)]
+# Definir os resultados respectivos
+    escolhas = [
+    'Pix Recebido',
+    'TED Recebido'
+    ]
 
-
-    df[df['Histórico'].str.contains("Transferência recebida", na=False)]
-
-    condicao = df['Histórico'].str[:3] == 'Pix'
-
-    df['Tipo'] = np.where(condicao, 'Pix Recebido', 'Transferência Recebida')
+# Aplicar (o que sobrar vira 'Transferência Recebida')
+    df['Tipo'] = np.select(condicoes, escolhas, default='Transferência Recebida')
     df['Dependencia Origem'] = df['Dependencia Origem'].fillna("Não Informado")
     df['Data do Balancete'] = df['Data do Balancete'].fillna("Não Informado")
 
     df.insert(2, 'Tipo', df.pop('Tipo'))
 
     df['Histórico'] = df['Histórico'].str.replace(
-        r'^(Pix\s*-\s*Recebido|Transferência recebida)\s*-\s*\d{2}/\d{2}\s*\d{2}:\d{2}\s*',
+        r'^(Pix\s*-\s*Recebido|Transferência recebida|TED-Crédito em Conta)\s*-\s*\d{2}/\d{2}\s*\d{2}:\d{2}\s*',
         '',
         regex=True
     )
