@@ -17,9 +17,9 @@ if botao:
     buffer.seek(0)
 
     st.download_button(
-        label='Baixar CSV',
+        label='Baixar Excel',
         data=buffer,
-        file_name='arquivo_extraido.csv',
+        file_name='arquivo_extraido.xlsx',
        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
