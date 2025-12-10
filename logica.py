@@ -15,29 +15,28 @@ def trans_df(excel):
     except:
         pass
 # Definir as condições
-    condicoes = [
-    df['Histórico'].str.startswith('Pix'),
-    df['Histórico'].str.startswith('TED')
-    ]
+# Passando uma tupla com todas as opções de início
+    df = df[df['Histórico'].str.startswith(('Pix - Recebido', 'TED', 'Transferência recebida'))]
+    condicao_pix = df['Histórico'].str.startswith('Pix - Recebido')
+    condicao_ted = df['Histórico'].str.startswith('TED')
 
-# Definir os resultados respectivos
-    escolhas = [
-    'Pix Recebido',
-    'TED Recebido'
-    ]
-
-# Aplicar (o que sobrar vira 'Transferência Recebida')
-    df['Tipo'] = np.select(condicoes, escolhas, default='Transferência Recebida')
+    df['Tipo'] = np.where(condicao_pix, 'Pix Recebido', 
+               np.where(condicao_ted, 'TED Recebido', 'Transferência Recebida')
+             )
     df['Dependencia Origem'] = df['Dependencia Origem'].fillna("Não Informado")
     df['Data do Balancete'] = df['Data do Balancete'].fillna("Não Informado")
 
     df.insert(2, 'Tipo', df.pop('Tipo'))
 
     df['Histórico'] = df['Histórico'].str.replace(
-        r'^(Pix\s*-\s*Recebido|Transferência recebida|TED-Crédito em Conta)\s*-\s*\d{2}/\d{2}\s*\d{2}:\d{2}\s*',
-        '',
-        regex=True
+    # 1. Lista os prefixos (Pix, Transf, TED com ou sem texto extra)
+    r'^(Pix\s*-\s*Recebido|Transferência recebida|TED-Crédito em Conta|TED)'
+    # 2. Remove o separador e qualquer "sujeira" numérica (datas, horas ou códigos como 085 0101) que vier depois
+    r'\s*-\s*[\d\s/:]*', 
+    '', 
+    regex=True
     )
+    df['Histórico'] = df['Histórico'].str.strip()
 
     df['CPF/CNPJ'] = df['Histórico'].str.extract(r'(\d{14}|\d{11})')
 
