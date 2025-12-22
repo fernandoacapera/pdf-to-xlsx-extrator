@@ -1,53 +1,84 @@
-# %%
 import pandas as pd
 import numpy as np
+import io
 
-# %%
-pd.__version__
-
-# %%
-
-# %%
-def trans_df(excel):
-    df = pd.read_csv(excel, encoding='latin-1')
+def trans_df(uploaded_file):
     try:
-        df = df.drop("Unnamed: 6", axis=1)
-    except:
-        pass
-# Definir as condições
-# Passando uma tupla com todas as opções de início
-    df = df[df['Histórico'].str.startswith(('Pix - Recebido', 'TED', 'Transferência recebida'))]
-    condicao_pix = df['Histórico'].str.startswith('Pix - Recebido')
-    condicao_ted = df['Histórico'].str.startswith('TED')
+        # --- PARTE 1: Leitura Robusta (Resolve o erro da primeira imagem) ---
+        conteudo_bytes = uploaded_file.getvalue()
+        
+        # Tenta decodificar latin-1 ou utf-8
+        try:
+            texto = conteudo_bytes.decode('latin-1')
+        except:
+            texto = conteudo_bytes.decode('utf-8', errors='ignore')
 
-    df['Tipo'] = np.where(condicao_pix, 'Pix Recebido', 
-               np.where(condicao_ted, 'TED Recebido', 'Transferência Recebida')
-             )
-    df['Dependencia Origem'] = df['Dependencia Origem'].fillna("Não Informado")
-    df['Data do Balancete'] = df['Data do Balancete'].fillna("Não Informado")
+        # Remove aspas que causam confusão nas colunas
+        texto_limpo = texto.replace('"', '')
 
-    df.insert(2, 'Tipo', df.pop('Tipo'))
+        # engine='python' e on_bad_lines='skip' impedem que o app trave se uma linha estiver quebrada
+        df = pd.read_csv(io.StringIO(texto_limpo), sep=',', on_bad_lines='skip', engine='python')
 
-    df['Histórico'] = df['Histórico'].str.replace(
-    # 1. Lista os prefixos (Pix, Transf, TED com ou sem texto extra)
-    r'^(Pix\s*-\s*Recebido|Transferência recebida|TED-Crédito em Conta|TED)'
-    # 2. Remove o separador e qualquer "sujeira" numérica (datas, horas ou códigos como 085 0101) que vier depois
-    r'\s*-\s*[\d\s/:]*', 
-    '', 
-    regex=True
-    )
-    df['Histórico'] = df['Histórico'].str.strip()
+    except Exception as e:
+        print(f"Erro ao ler CSV: {e}")
+        return None
 
-    df['CPF/CNPJ'] = df['Histórico'].str.extract(r'(\d{14}|\d{11})')
+    # --- PARTE 2: Limpeza e Tratamento ---
+    try:
+        df = df.drop("Unnamed: 6", axis=1, errors='ignore')
+        
+        if 'Histórico' not in df.columns:
+            return None
 
-    df['Histórico'] = df['Histórico'].str.replace(r'(\d{14}|\d{11})', '', regex=True)
+        # Filtra apenas o que interessa
+        termos_interesse = ('Pix - Recebido', 'TED', 'Transferência recebida')
+        df = df[df['Histórico'].str.startswith(termos_interesse, na=False)].copy()
 
-    df.insert(3, 'CPF/CNPJ', df.pop('CPF/CNPJ'))
+        if df.empty:
+            return pd.DataFrame()
 
-    df = df.fillna("Não Informado")
+        # Define os tipos
+        condicao_pix = df['Histórico'].str.startswith('Pix - Recebido')
+        condicao_ted = df['Histórico'].str.startswith('TED')
 
-    df.rename(columns={"Histórico":"Nome"}, inplace=True)
-    return df
+        df['Tipo'] = np.where(condicao_pix, 'Pix Recebido', 
+                     np.where(condicao_ted, 'TED Recebido', 'Transferência Recebida'))
+        
+        # Preenche nulos
+        cols_fillna = ['Dependencia Origem', 'Data do Balancete']
+        for col in cols_fillna:
+            if col in df.columns:
+                df[col] = df[col].fillna("Não Informado")
 
+        if len(df.columns) > 2:
+            df.insert(2, 'Tipo', df.pop('Tipo'))
 
+        # --- PARTE 3: O REGEX ATUALIZADO (Resolve o erro da segunda imagem) ---
+        # Adicionei "TED Transf.Eletr.Disponiv" na lista de remoção
+        padrao_regex = (
+            r'^(Pix\s*-\s*Recebido|Transferência recebida|TED-Crédito em Conta|TED Transf\.Eletr\.Disponiv|TED)' # Lista de prefixos
+            r'[\s-]*'         # Qualquer traço ou espaço depois do prefixo
+            r'[\d\s/:]*'      # Qualquer número, data ou código depois
+        )
+        
+        df['Histórico'] = df['Histórico'].str.replace(padrao_regex, '', regex=True)
+        df['Histórico'] = df['Histórico'].str.strip()
 
+        # Extrai CPF/CNPJ e remove do nome
+        df['CPF/CNPJ'] = df['Histórico'].str.extract(r'(\d{14}|\d{11})')
+        df['Histórico'] = df['Histórico'].str.replace(r'(\d{14}|\d{11})', '', regex=True)
+        
+        # Limpeza final de sujeira (traços soltos no inicio do nome)
+        df['Histórico'] = df['Histórico'].str.replace(r'^[\s-]*', '', regex=True).str.strip()
+
+        if len(df.columns) > 3:
+            df.insert(3, 'CPF/CNPJ', df.pop('CPF/CNPJ'))
+
+        df = df.fillna("Não Informado")
+        df.rename(columns={"Histórico": "Nome"}, inplace=True)
+        
+        return df
+        
+    except Exception as e:
+        print(f"Erro no tratamento: {e}")
+        return None
